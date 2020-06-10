@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using Docker.DotNet;
 using Docker.DotNet.Models;
@@ -359,9 +360,15 @@ namespace windows_hosts_writer
             if (string.IsNullOrEmpty(IP))
                 IP = network.IPAddress;
 
-            var allHosts = string.Join(" ", hostNames);
+            var sb = new StringBuilder();
+            for (int i = 0; i < hostNames.Count; i++)
+            {
+                sb.Append($"{IP}\t{hostNames[i]}\t\t#{containerId} by {GetTail()}");
+                if (i != hostNames.Count - 1) // Don't append new line for the last element
+                    sb.Append(Environment.NewLine);
+            }
 
-            return $"{IP}\t{allHosts}\t\t#{containerId} by {GetTail()}";
+            return sb.ToString();
         }
 
         private static readonly object _lockobject = new object();
