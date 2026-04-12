@@ -29,7 +29,9 @@ namespace windows_hosts_writer
         private static string _listenNetwork = CONST_ANYNET;
 
         //Location of the hosts file IN the container.  Mapped through a volume share to your hosts file
-        private static string _hostsPath = "c:\\driversetc\\hosts";
+        private static string _hostsPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "c:\\driversetc\\hosts"
+            : "/host-etc/hosts";
 
         //All host file entries we're tracking
         private static Dictionary<string, List<string>> _hostsEntries = new Dictionary<string, List<string>>();
@@ -67,7 +69,7 @@ namespace windows_hosts_writer
 
         static void Main(string[] args)
         {
-            Log("Starting Windows Hosts Writer");
+            Log("Starting Hosts Writer");
 
             if (Environment.GetEnvironmentVariable(ENV_HOSTPATH) != null)
             {
@@ -161,28 +163,57 @@ namespace windows_hosts_writer
 
                 var shutdown = new ManualResetEvent(false);
                 var complete = new ManualResetEventSlim();
-                var hr = new HandlerRoutine(type =>
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    Log($"ConsoleCtrlHandler got signal: {type}");
+                    var hr = new HandlerRoutine(type =>
+                    {
+                        Log($"ConsoleCtrlHandler got signal: {type}");
 
-                    shutdown.Set();
-                    complete.Wait();
+                        shutdown.Set();
+                        complete.Wait();
 
-                    return false;
-                });
+                        return false;
+                    });
 
-                SetConsoleCtrlHandler(hr, true);
+                    SetConsoleCtrlHandler(hr, true);
 
-                //Hold here until we get that shutdown event
-                shutdown.WaitOne();
+                    //Hold here until we get that shutdown event
+                    shutdown.WaitOne();
 
-                Log("Stopping server...");
+                    Log("Stopping server...");
 
-                Exit();
+                    Exit();
 
-                complete.Set();
+                    complete.Set();
 
-                GC.KeepAlive(hr);
+                    GC.KeepAlive(hr);
+                }
+                else
+                {
+                    Console.CancelKeyPress += (s, e) =>
+                    {
+                        Log("CancelKeyPress received");
+                        e.Cancel = true;
+                        shutdown.Set();
+                    };
+
+                    AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+                    {
+                        Log("ProcessExit received");
+                        shutdown.Set();
+                        complete.Wait();
+                    };
+
+                    //Hold here until we get that shutdown event
+                    shutdown.WaitOne();
+
+                    Log("Stopping server...");
+
+                    Exit();
+
+                    complete.Set();
+                }
             }
             catch (Exception ex)
             {
@@ -488,7 +519,11 @@ namespace windows_hosts_writer
 
         private static DockerClient GetClient()
         {
-            var endpoint = Environment.GetEnvironmentVariable(ENV_ENDPOINT) ?? "npipe://./pipe/docker_engine";
+            var defaultEndpoint = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "npipe://./pipe/docker_engine"
+                : "unix:///var/run/docker.sock";
+
+            var endpoint = Environment.GetEnvironmentVariable(ENV_ENDPOINT) ?? defaultEndpoint;
 
             return new DockerClientConfiguration(new Uri(endpoint)).CreateClient();
         }

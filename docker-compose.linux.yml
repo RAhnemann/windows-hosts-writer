@@ -1,0 +1,40 @@
+services:
+  traefik:
+    image: traefik:v2.10
+    command:
+      - "--ping"
+      - "--api.insecure=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedByDefault=false"
+      - "--providers.file.directory=/etc/traefik/config/dynamic"
+      - "--entryPoints.websecure.address=:443"
+      - "--entryPoints.websecure.forwardedHeaders.insecure"
+    ports:
+      - "443:443"
+      - "8079:8080"
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./docker/traefik:/etc/traefik
+  whoami:
+    image: traefik/whoami
+    environment:
+      - WHOAMI_PORT_NUMBER=80
+    networks:
+      default:
+        aliases: [ "${WHOAMI_HOST}" ]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami-secure.entrypoints=websecure"
+      - "traefik.http.routers.whoami-secure.rule=Host(`${WHOAMI_HOST}`)"
+      - "traefik.http.routers.whoami-secure.tls=true"
+  whw:
+    build:
+      context: .
+      dockerfile: Dockerfile.linux
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /etc:/host-etc
+    environment:
+      TERMINATION_MAP: whoami:traefik
