@@ -2,5 +2,7 @@ obj
 bin
 .vs/
 
+scripts/.smoke-hosts
+
 docker/traefik/certs
 !docker/traefik/certs/.gitkeep
