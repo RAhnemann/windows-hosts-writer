@@ -148,15 +148,15 @@ Starting up with additional services mapped to **traefik** will result in the fo
 
 ## For Linux Nerds
 
-Windows containers talk to the Windows `hosts` file cleanly once you run the `icacls` grant above, and that's basically the end of it. Linux is where you actually have stuff to deal with: `/etc/hosts` is strictly `root:root 0644`, and Docker's path from a container process to an edited host file has a few landmines that'll make writes silently fail.
+Windows is done after the `icacls` grant. Linux has a few landmines that'll silently fail the write.
 
-### Build and compose
+### Compose
 
-WHW builds as a Linux container from `Dockerfile.linux`, wired up in `docker-compose.linux.yml`. Differences from the Windows setup:
+Use `Dockerfile.linux` / `docker-compose.linux.yml`:
 
-- Docker endpoint is a Unix socket, not a named pipe: mount `/var/run/docker.sock:/var/run/docker.sock:ro`
-- The host's `hosts` file is exposed by bind-mounting `/etc:/host-etc` — WHW resolves `/host-etc/hosts` automatically on Linux
-- No prebuilt image is published for the Linux variant; the compose file uses `build:` against `Dockerfile.linux`, so run `docker compose -f docker-compose.linux.yml up -d --build` the first time
+- Unix socket instead of named pipe: `/var/run/docker.sock:/var/run/docker.sock:ro`
+- Host hosts file exposed as `/etc:/host-etc` — WHW finds `/host-etc/hosts` automatically
+- No prebuilt image; first run needs `docker compose -f docker-compose.linux.yml up -d --build`
 
 ```yaml
   whw:
@@ -170,26 +170,15 @@ WHW builds as a Linux container from `Dockerfile.linux`, wired up in `docker-com
       TERMINATION_MAP: whoami:traefik
 ```
 
-### Getting writes to actually land on the host file
+### Why your writes are silently failing
 
-If you see `Could not find hosts file` in the logs, or entries never appear in `/etc/hosts`, it's almost always one of these:
+- **Container must run as UID 0.** The stock dotnet base image does. If you've rebuilt with a non-root `USER`, pin `user: "0:0"` or grant that UID on `/etc/hosts`.
+- **Rootless Docker / userns-remap breaks it.** Container "root" maps to a non-root UID on the host that doesn't own `/etc/hosts`.
+- **SELinux denies the write.** On RHEL/Fedora/Rocky, append `:Z` to the bind mount: `/etc:/host-etc:Z`.
 
-- **The container must run as UID 0 (root).** The stock `mcr.microsoft.com/dotnet/runtime` base image already runs as root, so the default compose works. If you've rebuilt the image with a non-root `USER`, the write silently fails — either pin `user: "0:0"` in compose or grant that UID write access on the host file.
-- **Rootless Docker / userns-remap breaks it.** Under `userns-remap` (or rootless Docker), "root" inside the container maps to a high UID on the host that does not own `/etc/hosts`, so writes fail. Run this container on a daemon without userns remapping, or relax permissions on the host file to match the mapped UID.
-- **SELinux will deny the write.** On RHEL / Fedora / CentOS / Rocky with SELinux enforcing, the bind-mounted `/host-etc` gets a context the container can't write to. Append `:Z` so Docker relabels the mount for this container:
+### On Docker Desktop for Windows
 
-  ```yaml
-  volumes:
-    - /etc:/host-etc:Z
-  ```
-
-  (Use `:z` instead if the mount is shared across multiple containers.)
-
-Once writes land, everything downstream (termination maps, aliases, cleanup on shutdown) behaves the same as on Windows.
-
-### Linux containers on Docker Desktop for Windows
-
-When the Linux stack runs under Docker Desktop for Windows, the per-container IPs inside the Linux VM aren't routable from the Windows host, so writing them to a hosts file doesn't help. If your services are fronted by a port-forwarded reverse proxy (e.g. Traefik on `127.0.0.1:443`), use the special `loopback` termination target to write `127.0.0.1` instead of a container IP:
+Container IPs in the Linux VM aren't routable from the Windows host. If Traefik is port-forwarded on `127.0.0.1:443`, use the `loopback` target to write `127.0.0.1` instead:
 
 ```yaml
     environment:
@@ -198,7 +187,7 @@ When the Linux stack runs under Docker Desktop for Windows, the per-container IP
 
 ### Smoke test
 
-`scripts/smoke-linux.sh` builds the image, brings up a minimal stack against a fake hosts file, and verifies WHW writes an alias on startup and removes it on shutdown.
+`scripts/smoke-linux.sh` brings up a minimal stack against a fake hosts file and verifies write + cleanup.
 
 ## Logging
 
