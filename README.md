@@ -48,7 +48,7 @@ icacls C:\Windows\System32\drivers\etc\hosts /grant Users:W
 
 If Windows Update or a security tool resets the ACL later, re-run the command.
 
-**Linux** — the default `mcr.microsoft.com/dotnet/runtime` base image runs as `root`, which already has write access to `/etc/hosts`. If you've rebuilt the image to run as a non-root user, either grant that UID write access on the host file or run the container with `user: "0:0"`.
+Linux has its own, messier story — see [For Linux Nerds](#for-linux-nerds) below.
 
 ## Termination Map
 
@@ -146,9 +146,13 @@ Starting up with additional services mapped to **traefik** will result in the fo
 172.20.233.154	whw		#by whw
 ```
 
-## Running on Linux
+## For Linux Nerds
 
-WHW builds and runs as a Linux container too. Use `Dockerfile.linux` / `docker-compose.linux.yml`. The differences from the Windows setup:
+Windows containers talk to the Windows `hosts` file cleanly once you run the `icacls` grant above, and that's basically the end of it. Linux is where you actually have stuff to deal with: `/etc/hosts` is strictly `root:root 0644`, and Docker's path from a container process to an edited host file has a few landmines that'll make writes silently fail.
+
+### Build and compose
+
+WHW builds as a Linux container from `Dockerfile.linux`, wired up in `docker-compose.linux.yml`. Differences from the Windows setup:
 
 - Docker endpoint is a Unix socket, not a named pipe: mount `/var/run/docker.sock:/var/run/docker.sock:ro`
 - The host's `hosts` file is exposed by bind-mounting `/etc:/host-etc` — WHW resolves `/host-etc/hosts` automatically on Linux
@@ -165,6 +169,23 @@ WHW builds and runs as a Linux container too. Use `Dockerfile.linux` / `docker-c
     environment:
       TERMINATION_MAP: whoami:traefik
 ```
+
+### Getting writes to actually land on the host file
+
+If you see `Could not find hosts file` in the logs, or entries never appear in `/etc/hosts`, it's almost always one of these:
+
+- **The container must run as UID 0 (root).** The stock `mcr.microsoft.com/dotnet/runtime` base image already runs as root, so the default compose works. If you've rebuilt the image with a non-root `USER`, the write silently fails — either pin `user: "0:0"` in compose or grant that UID write access on the host file.
+- **Rootless Docker / userns-remap breaks it.** Under `userns-remap` (or rootless Docker), "root" inside the container maps to a high UID on the host that does not own `/etc/hosts`, so writes fail. Run this container on a daemon without userns remapping, or relax permissions on the host file to match the mapped UID.
+- **SELinux will deny the write.** On RHEL / Fedora / CentOS / Rocky with SELinux enforcing, the bind-mounted `/host-etc` gets a context the container can't write to. Append `:Z` so Docker relabels the mount for this container:
+
+  ```yaml
+  volumes:
+    - /etc:/host-etc:Z
+  ```
+
+  (Use `:z` instead if the mount is shared across multiple containers.)
+
+Once writes land, everything downstream (termination maps, aliases, cleanup on shutdown) behaves the same as on Windows.
 
 ### Linux containers on Docker Desktop for Windows
 
