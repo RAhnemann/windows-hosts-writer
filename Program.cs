@@ -132,6 +132,38 @@ namespace windows_hosts_writer
                 }
             }
 
+            // Fail fast if we can't write to the hosts file. Otherwise the timer loop
+            // silently swallows the access error and nothing ever appears in the file.
+            try
+            {
+                using (File.Open(_hostsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                {
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                Log($"FATAL: Hosts file not found at '{_hostsPath}'.");
+                Log("Check that the volume mount points at a real hosts file.");
+                Environment.Exit(1);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                Log($"FATAL: Hosts file directory not found for '{_hostsPath}'.");
+                Log("Check that the volume mount path is correct.");
+                Environment.Exit(1);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Log($"FATAL: No write access to hosts file at '{_hostsPath}'.");
+                Log("The container cannot modify the mounted hosts file. Verify the volume mount and that the container user can write to the file.");
+                Environment.Exit(1);
+            }
+            catch (Exception ex)
+            {
+                Log($"FATAL: Could not access hosts file at '{_hostsPath}': {ex.Message}");
+                Environment.Exit(1);
+            }
+
             try
             {
                 _client = GetClient();
