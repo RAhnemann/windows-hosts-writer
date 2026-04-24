@@ -380,9 +380,6 @@ namespace windows_hosts_writer
                 //Filter these out
                 hostNames = hostNames.Distinct().ToList();
 
-                //Did we map this elsewhere?
-                var hasMap = false;
-
                 foreach (var hostName in hostNames)
                 {
                     if (!_termMaps.ContainsKey(hostName))
@@ -391,6 +388,16 @@ namespace windows_hosts_writer
                     }
 
                     var destName = _termMaps[hostName];
+
+                    // Special target: "loopback" (or literal "127.0.0.1") writes the loopback
+                    // address instead of resolving a container IP. Needed when Linux containers
+                    // run on Docker Desktop for Windows, where docker-internal IPs are not
+                    // routable from the Windows host but traefik is port-forwarded on 127.0.0.1.
+                    if (destName.Equals("loopback", StringComparison.OrdinalIgnoreCase) || destName == "127.0.0.1")
+                    {
+                        ip = "127.0.0.1";
+                        break;
+                    }
 
                     var allContainers = _client.Containers.ListContainersAsync(new ContainersListParameters()).Result;
 
@@ -404,9 +411,6 @@ namespace windows_hosts_writer
                         }
 
                         ip = matchContainer.NetworkSettings.Networks[matchContainer.NetworkSettings.Networks.First().Key].IPAddress;
-
-                        if (hasMap)
-                            break;
                     }
                 }
 
