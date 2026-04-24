@@ -35,6 +35,6 @@ services:
       dockerfile: Dockerfile.linux
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc:/host-etc
+      - C:/Windows/System32/drivers/etc:/host-etc
     environment:
-      TERMINATION_MAP: whoami:traefik
+      TERMINATION_MAP: whoami:loopback

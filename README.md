@@ -147,12 +147,22 @@ Use `docker-compose.linux.yml` / `Dockerfile.linux`:
       dockerfile: Dockerfile.linux
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /etc:/host-etc
+      - C:/Windows/System32/drivers/etc:/host-etc
     environment:
       TERMINATION_MAP: whoami:loopback
 ```
 
-Unix socket replaces the Windows named pipe, and WHW picks up `/host-etc/hosts` automatically on Linux.
+The Linux container reaches the Docker engine through its Unix socket and finds the Windows hosts file at `/host-etc/hosts` via the bind mount.
+
+### Grant write access on the hosts file
+
+The Linux container is writing to an NTFS file, so Windows ACLs apply. Grant write permission once from an elevated PowerShell:
+
+```powershell
+icacls C:\Windows\System32\drivers\etc\hosts /grant Users:W
+```
+
+Re-run if Windows Update or a security tool resets the ACL.
 
 ### Use the `loopback` termination target
 
