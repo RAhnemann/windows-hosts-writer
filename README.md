@@ -138,7 +138,7 @@ Running WHW as a Linux container on a Windows host (Docker Desktop with the WSL2
 
 ### Compose
 
-No prebuilt image is published; build from `Dockerfile.linux` via `docker-compose.linux.yml`:
+Use `docker-compose.linux.yml` / `Dockerfile.linux`:
 
 ```yaml
   whw:
@@ -152,7 +152,7 @@ No prebuilt image is published; build from `Dockerfile.linux` via `docker-compos
       TERMINATION_MAP: whoami:loopback
 ```
 
-Unix socket replaces the Windows named pipe, and WHW picks up `/host-etc/hosts` automatically on Linux. First run needs `docker compose -f docker-compose.linux.yml up -d --build`.
+Unix socket replaces the Windows named pipe, and WHW picks up `/host-etc/hosts` automatically on Linux.
 
 ### Use the `loopback` termination target
 
