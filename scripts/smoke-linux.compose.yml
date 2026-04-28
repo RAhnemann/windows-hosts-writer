@@ -1,0 +1,16 @@
+services:
+  whw:
+    build:
+      context: ..
+      dockerfile: Dockerfile.linux
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./.smoke-hosts:/tmp/hosts
+    environment:
+      hosts_path: /tmp/hosts
+  target:
+    image: nginx:alpine
+    networks:
+      default:
+        aliases:
+          - smoke-target.local

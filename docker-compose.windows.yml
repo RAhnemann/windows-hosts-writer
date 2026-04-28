@@ -37,6 +37,7 @@ services:
     image: ${WHW_IMAGE}
     build:
       context: .
+      dockerfile: Dockerfile.windows
       args:
         BASE_IMAGE: ${BASE_IMAGE}
     volumes: 

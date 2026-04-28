@@ -2,5 +2,9 @@ obj
 bin
 .vs/
 
+.claude/settings.local.json
+
+scripts/.smoke-hosts
+
 docker/traefik/certs
 !docker/traefik/certs/.gitkeep

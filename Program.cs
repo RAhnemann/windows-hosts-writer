@@ -29,7 +29,9 @@ namespace windows_hosts_writer
         private static string _listenNetwork = CONST_ANYNET;
 
         //Location of the hosts file IN the container.  Mapped through a volume share to your hosts file
-        private static string _hostsPath = "c:\\driversetc\\hosts";
+        private static string _hostsPath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? "c:\\driversetc\\hosts"
+            : "/host-etc/hosts";
 
         //All host file entries we're tracking
         private static Dictionary<string, List<string>> _hostsEntries = new Dictionary<string, List<string>>();
@@ -67,7 +69,7 @@ namespace windows_hosts_writer
 
         static void Main(string[] args)
         {
-            Log("Starting Windows Hosts Writer");
+            Log("Starting Hosts Writer");
 
             if (Environment.GetEnvironmentVariable(ENV_HOSTPATH) != null)
             {
@@ -130,6 +132,38 @@ namespace windows_hosts_writer
                 }
             }
 
+            // Fail fast if we can't write to the hosts file. Otherwise the timer loop
+            // silently swallows the access error and nothing ever appears in the file.
+            try
+            {
+                using (File.Open(_hostsPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite))
+                {
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                Log($"FATAL: Hosts file not found at '{_hostsPath}'.");
+                Log("Check that the volume mount points at a real hosts file.");
+                Environment.Exit(1);
+            }
+            catch (DirectoryNotFoundException)
+            {
+                Log($"FATAL: Hosts file directory not found for '{_hostsPath}'.");
+                Log("Check that the volume mount path is correct.");
+                Environment.Exit(1);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                Log($"FATAL: No write access to hosts file at '{_hostsPath}'.");
+                Log("The container cannot modify the mounted hosts file. Verify the volume mount and that the container user can write to the file.");
+                Environment.Exit(1);
+            }
+            catch (Exception ex)
+            {
+                Log($"FATAL: Could not access hosts file at '{_hostsPath}': {ex.Message}");
+                Environment.Exit(1);
+            }
+
             try
             {
                 _client = GetClient();
@@ -161,28 +195,57 @@ namespace windows_hosts_writer
 
                 var shutdown = new ManualResetEvent(false);
                 var complete = new ManualResetEventSlim();
-                var hr = new HandlerRoutine(type =>
+
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    Log($"ConsoleCtrlHandler got signal: {type}");
+                    var hr = new HandlerRoutine(type =>
+                    {
+                        Log($"ConsoleCtrlHandler got signal: {type}");
 
-                    shutdown.Set();
-                    complete.Wait();
+                        shutdown.Set();
+                        complete.Wait();
 
-                    return false;
-                });
+                        return false;
+                    });
 
-                SetConsoleCtrlHandler(hr, true);
+                    SetConsoleCtrlHandler(hr, true);
 
-                //Hold here until we get that shutdown event
-                shutdown.WaitOne();
+                    //Hold here until we get that shutdown event
+                    shutdown.WaitOne();
 
-                Log("Stopping server...");
+                    Log("Stopping server...");
 
-                Exit();
+                    Exit();
 
-                complete.Set();
+                    complete.Set();
 
-                GC.KeepAlive(hr);
+                    GC.KeepAlive(hr);
+                }
+                else
+                {
+                    Console.CancelKeyPress += (s, e) =>
+                    {
+                        Log("CancelKeyPress received");
+                        e.Cancel = true;
+                        shutdown.Set();
+                    };
+
+                    AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+                    {
+                        Log("ProcessExit received");
+                        shutdown.Set();
+                        complete.Wait();
+                    };
+
+                    //Hold here until we get that shutdown event
+                    shutdown.WaitOne();
+
+                    Log("Stopping server...");
+
+                    Exit();
+
+                    complete.Set();
+                }
             }
             catch (Exception ex)
             {
@@ -349,9 +412,6 @@ namespace windows_hosts_writer
                 //Filter these out
                 hostNames = hostNames.Distinct().ToList();
 
-                //Did we map this elsewhere?
-                var hasMap = false;
-
                 foreach (var hostName in hostNames)
                 {
                     if (!_termMaps.ContainsKey(hostName))
@@ -360,6 +420,16 @@ namespace windows_hosts_writer
                     }
 
                     var destName = _termMaps[hostName];
+
+                    // Special target: "loopback" (or literal "127.0.0.1") writes the loopback
+                    // address instead of resolving a container IP. Needed when Linux containers
+                    // run on Docker Desktop for Windows, where docker-internal IPs are not
+                    // routable from the Windows host but traefik is port-forwarded on 127.0.0.1.
+                    if (destName.Equals("loopback", StringComparison.OrdinalIgnoreCase) || destName == "127.0.0.1")
+                    {
+                        ip = "127.0.0.1";
+                        break;
+                    }
 
                     var allContainers = _client.Containers.ListContainersAsync(new ContainersListParameters()).Result;
 
@@ -373,9 +443,6 @@ namespace windows_hosts_writer
                         }
 
                         ip = matchContainer.NetworkSettings.Networks[matchContainer.NetworkSettings.Networks.First().Key].IPAddress;
-
-                        if (hasMap)
-                            break;
                     }
                 }
 
@@ -488,7 +555,11 @@ namespace windows_hosts_writer
 
         private static DockerClient GetClient()
         {
-            var endpoint = Environment.GetEnvironmentVariable(ENV_ENDPOINT) ?? "npipe://./pipe/docker_engine";
+            var defaultEndpoint = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? "npipe://./pipe/docker_engine"
+                : "unix:///var/run/docker.sock";
+
+            var endpoint = Environment.GetEnvironmentVariable(ENV_ENDPOINT) ?? defaultEndpoint;
 
             return new DockerClientConfiguration(new Uri(endpoint)).CreateClient();
         }

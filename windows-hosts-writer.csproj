@@ -6,9 +6,7 @@
     <RootNamespace>windows_hosts_writer</RootNamespace>
     <AssemblyVersion>2.0.0.0</AssemblyVersion>
     <Version>2.0.0</Version>
-    <DockerDefaultTargetOS>Windows</DockerDefaultTargetOS>
     <DockerfileContext>.</DockerfileContext>
-    <DockerfileRunArguments>-v \\.\pipe\docker_engine:\\.\pipe\docker_engine -v c:\Windows\System32\drivers\etc:c:\driversetc</DockerfileRunArguments>
   </PropertyGroup>
 
   <ItemGroup>

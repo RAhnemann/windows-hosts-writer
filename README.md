@@ -132,6 +132,51 @@ Starting up with additional services mapped to **traefik** will result in the fo
 172.20.233.154	whw		#by whw
 ```
 
+## For Linux Nerds
+
+Running WHW as a Linux container on a Windows host (Docker Desktop with the WSL2 backend).
+
+### Compose
+
+Use `docker-compose.linux.yml` / `Dockerfile.linux`:
+
+```yaml
+  whw:
+    build:
+      context: .
+      dockerfile: Dockerfile.linux
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - C:/Windows/System32/drivers/etc:/host-etc
+    environment:
+      TERMINATION_MAP: whoami:loopback
+```
+
+The Linux container reaches the Docker engine through its Unix socket and finds the Windows hosts file at `/host-etc/hosts` via the bind mount.
+
+### Grant write access on the hosts file
+
+The Linux container is writing to an NTFS file, so Windows ACLs apply. Grant write permission once from an elevated PowerShell:
+
+```powershell
+icacls C:\Windows\System32\drivers\etc\hosts /grant Users:W
+```
+
+Re-run if Windows Update or a security tool resets the ACL.
+
+### Use the `loopback` termination target
+
+Container IPs live inside the Docker Desktop Linux VM and aren't routable from the Windows host, so writing those IPs to a hosts file won't help the Windows browser resolve anything. If your services are fronted by a port-forwarded reverse proxy (e.g. Traefik on `127.0.0.1:443`), use the special `loopback` target so WHW writes `127.0.0.1` instead:
+
+```yaml
+    environment:
+      TERMINATION_MAP: whoami:loopback
+```
+
+### Smoke test
+
+`scripts/smoke-linux.sh` brings up a minimal stack against a fake hosts file and verifies write + cleanup.
+
 ## Logging
 
 We've also added logging to the output visible through Docker so you can quickly see what **whw** is doing.
