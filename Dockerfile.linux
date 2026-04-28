@@ -1,7 +1,10 @@
-FROM mcr.microsoft.com/dotnet/runtime:6.0 AS base
+ARG BASE_IMAGE  
+ARG BUILD_IMAGE
+
+FROM ${BASE_IMAGE} AS base
 WORKDIR /app
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+FROM ${BUILD_IMAGE} AS build
 WORKDIR /src
 COPY ["windows-hosts-writer.csproj", "."]
 RUN dotnet restore "./windows-hosts-writer.csproj"
